@@ -1,0 +1,50 @@
+name: Build Godot Web export template
+on:
+  workflow_dispatch
+
+env:
+  OPTIMIZE: size_extra
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.20
+
+      - run: pip install scons
+
+      - name: Get Godot 4.7.2-stable source
+        run: git clone --depth 1 --branch 4.7.2-stable https://github.com/godotengine/godot.git godot-src
+
+      - name: Check the class list against the real Godot class tree
+        run: python3 custom_engine/check_profile.py godot-src custom_engine/ifr_web.build custom_engine/required_classes.txt godot-src/ifr_web.build
+
+      - name: Build Web export template
+        working-directory: godot-src
+        run: |
+          scons platform=web target=template_release threads=no dlink_enabled=no production=yes optimize=$OPTIMIZE debug_symbols=yes \
+            build_profile=ifr_web.build \
+            rendering_device=no vulkan=no d3d12=no metal=no opengl3=yes \
+            modules_enabled_by_default=no \
+            module_gdscript_enabled=yes module_freetype_enabled=yes module_text_server_fb_enabled=yes module_svg_enabled=yes \
+            module_jolt_physics_enabled=yes module_ogg_enabled=yes module_vorbis_enabled=yes \
+            module_websocket_enabled=yes module_mbedtls_enabled=yes module_multiplayer_enabled=yes \
+            module_jpg_enabled=yes module_webp_enabled=yes \
+            module_etcpak_enabled=yes module_astcenc_enabled=yes module_bcdec_enabled=yes module_squish_enabled=yes
+
+      - name: Create size report
+        run: python3 custom_engine/wasm_size_report.py "$(ls godot-src/bin/*.wasm | head -1)" size-report.txt
+
+      - name: Upload Web export template and size report
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-web-export-template
+          path: |
+            godot-src/bin/*.wasm
+            godot-src/bin/*.js
+            size-report.txt
+          if-no-files-found: error
