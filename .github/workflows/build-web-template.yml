@@ -1,24 +1,10 @@
-late · YML
-name: Build Island Fight Race web template
-on:
-  workflow_dispatch:
-    inputs:
-      report:
-        description: "Also build the size-report (a second, longer build). Only needed when you want me to look for more savings."
-        type: boolean
-        default: false
+name: Build size report (only when asked)
+on: workflow_dispatch
 env:
-  # The only setting you may ever want to change:
-  #   size_extra = smallest file (default)
-  #   speed      = fastest game on a weak phone, bigger file
   OPTIMIZE: size_extra
 jobs:
-  build:
+  report:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: ${{ fromJSON(inputs.report && '["final","report"]' || '["final"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: mymindstorm/setup-emsdk@v14
@@ -27,19 +13,12 @@ jobs:
       - run: pip install scons
       - name: Get Godot 4.7.2-stable source
         run: git clone --depth 1 --branch 4.7.2-stable https://github.com/godotengine/godot.git godot-src
-      - name: Check the class list against the real Godot class tree (removes anything the game needs)
+      - name: Check the class list against the real Godot class tree
         run: python3 custom_engine/check_profile.py godot-src custom_engine/ifr_web.build custom_engine/required_classes.txt godot-src/ifr_web.build
-      - name: Build (${{ matrix.variant }})
+      - name: Build with function names
         working-directory: godot-src
         run: |
-          # "report" = the same engine plus function names, ONLY to measure what is still inside. Never give it to players.
-          EXTRA="optimize=$OPTIMIZE"
-          if [ "${{ matrix.variant }}" = "report" ]; then EXTRA="optimize=$OPTIMIZE debug_symbols=yes"; fi
-          # Only the engine parts Island Fight Race really uses are switched ON (all other modules are OFF):
-          #   gdscript | freetype + text_server_fb + svg | jolt_physics | ogg + vorbis | websocket + mbedtls | multiplayer
-          #   jpg + webp | etcpak + astcenc + bcdec + squish
-          # If SCons stops with an error that names "rendering_device", delete that one word and run again.
-          scons platform=web target=template_release threads=no dlink_enabled=no production=yes $EXTRA \
+          scons platform=web target=template_release threads=no dlink_enabled=no production=yes optimize=$OPTIMIZE debug_symbols=yes \
             build_profile=ifr_web.build \
             rendering_device=no vulkan=no d3d12=no metal=no opengl3=yes \
             modules_enabled_by_default=no \
@@ -48,17 +27,9 @@ jobs:
             module_websocket_enabled=yes module_mbedtls_enabled=yes module_multiplayer_enabled=yes \
             module_jpg_enabled=yes module_webp_enabled=yes \
             module_etcpak_enabled=yes module_astcenc_enabled=yes module_bcdec_enabled=yes module_squish_enabled=yes
-          ls -l bin
-      - uses: actions/upload-artifact@v4
-        if: matrix.variant == 'final'
-        with:
-          name: web-template
-          path: godot-src/bin/*.zip
-      - name: Size report (report variant only)
-        if: matrix.variant == 'report'
+      - name: Size report
         run: python3 custom_engine/wasm_size_report.py "$(ls godot-src/bin/*.wasm | head -1)" size-report.txt
       - uses: actions/upload-artifact@v4
-        if: matrix.variant == 'report'
         with:
           name: size-report
           path: size-report.txt
